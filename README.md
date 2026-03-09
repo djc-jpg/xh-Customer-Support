@@ -1,8 +1,8 @@
 # xh-Customer-Support
 
-一个面向客服场景的可运行项目，用来串起 `RAG`、`Tool Calling`、`Plan-Execute`、`ReAct`、`Multi-Agent`、`SSE` 和 `Trace / Eval` 这些能力在同一条业务链路中的配合方式。
+这是一个面向客服场景的 AI Agent 原型。我当前主要想先把一条常见客服链路跑通：用户提问后，系统先判断意图和情绪，再查 FAQ，必要时调用订单或工单工具，最后把结果以流式方式返回前端。
 
-这个仓库的重点不是做一个“功能尽可能多”的平台，而是把一条**能运行、能观察、能评测、边界清晰**的客服处理链路整理清楚，适合作为 GitHub 公开展示的项目仓库。
+RAG、Tool Calling、Plan-Execute、ReAct、Multi-Agent、SSE，以及后面的 Trace / Eval，都是围绕这条链路逐步加上的。当前版本没有追求把能力铺得很大，重点还是把核心流程跑通，把调试和评测材料留全，方便看清它现在能做到什么、边界又在哪里。
 
 ## 项目概览
 
@@ -32,22 +32,22 @@
 
 ## 系统架构
 
-当前主链路采用串行编排方式，核心流程可以直接按下面这条链理解：
+当前主链路采用串行编排方式，可以直接按下面这条链理解：
 
 `用户 -> Frontend UI -> /chat -> IntentSentimentAgent -> KnowledgeAgent / RAG -> PlannerAgent -> ExecutorAgent -> Tools -> SSE 返回前端`
 
-为了方便 GitHub 页面阅读，这里保留文字版主链路说明；即使不看图，也可以按上面的链路理解当前系统结构。
+简单理解，就是前端把用户问题发到 `/chat`，后端先做分析和检索，再决定后续步骤，必要时调用工具，最后把回答和调试信息一起流式返回前端。
 
 ## 当前版本已验证的内容
 
 以下内容是当前仓库**已经实际跑通或已完成一轮验证**的部分：
 
-- 真实模型主链路当前可运行，`/health` 可返回 `llm_mode = dashscope`
-- 根路径可跳转到 `/frontend/`，前端能发起真实聊天请求
-- `/ingest`、`/chat`、SSE 流式返回和调试面板主链路可用
-- 结构化 trace 已落地，能记录 `analysis / retrieval / plan / tool_calls / final_answer`
-- 已执行一轮本地 Playwright 浏览器自动化回归，覆盖首页、导入知识库、订单查询、隐私边界拒绝等核心路径
-- 已执行一轮 40 条结构化样例的自动评测，并产出最新报告
+- 当前可接 DashScope 兼容接口，`/health` 里能看到 `llm_mode = dashscope`
+- 根路径会跳转到 `/frontend/`，前端可以直接发起聊天请求
+- `/ingest`、`/chat`、SSE 流式返回和调试面板这条链路当前都能跑通
+- `/chat` 已接入结构化 trace，能记录 `analysis / retrieval / plan / tool_calls / final_answer`
+- 已做过一轮基于 Playwright 的页面回归验证，覆盖首页、导入知识库、订单查询、隐私边界拒绝等核心路径
+- 当前内置 40 条结构化规则评测样例，并保留了最新一轮评测报告
 
 这里的“已验证”指当前仓库版本已经完成本地运行和结果留存，不表示系统已经具备生产级 SLA、真实业务集成或开放域鲁棒性。
 
@@ -75,8 +75,8 @@
 | `RAG` | 基于 FAQ Markdown 导入、切分、Embedding + Chroma 检索；在缺少相关配置时支持 fallback | 当前主要是单知识源 FAQ 检索，还没有做多知识源路由、hybrid retrieval 或 rerank 落地 |
 | `Tool Calling` | 当前内置 `query_order` 和 `create_ticket` 两个工具，工具结果会进入最终回答；对缺参数、越权请求和人工升级做了规则守卫 | 工具层仍是 mock，不代表已接真实业务系统 |
 | `Multi-Agent` | 后端当前拆成分析、知识、规划、执行四类角色，按串行主链路编排 | 不是并行 agent runtime，也不是通用的多智能体协作平台 |
-| `Plan-Execute` | 有独立 planner 和 executor，plan 会进入调试面板，也会影响后续执行 | 当前为轻量计划生成与执行展示链路，不是长流程任务编排引擎 |
-| `ReAct` | Executor 会输出 Thought / Action / Observation 轨迹，用于展示工具决策和执行过程 | 当前为单轮工具决策轨迹展示，不是开放式长期循环 Agent |
+| `Plan-Execute` | 有独立 planner 和 executor，plan 会进入调试面板，也会影响后续执行 | 当前主要是轻量计划生成与执行展示链路，不是长流程任务编排引擎 |
+| `ReAct` | Executor 会输出 Thought / Action / Observation 轨迹，用于展示工具决策和执行过程 | 当前主要是单轮请求内的工具决策轨迹展示，不是开放式长期循环 Agent |
 | `SSE` | 前端通过 SSE 接收流式回答和调试信息 | 当前是轻量流式交互，不是完整消息总线或断点恢复机制 |
 | `Trace` | `/chat` 返回结构化 trace，可用于 bad case 排查和自动评测 | 当前 trace 更偏调试与评测支撑，不是完整 observability 平台 |
 | `Evaluation` | 基于 40 条结构化样例执行规则评测，并输出 bad case 汇总 | 规则评测主要验证定义好的检查项，不等价于开放式回答质量已经“完美” |
