@@ -1,0 +1,12 @@
+.env
+.env.local
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+tmp_*.png
+tmp_*.json
+chroma_db/
+eval/results/smoke*.json
+eval/results/full-run.json

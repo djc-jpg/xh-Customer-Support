@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title></title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="card header-card">
+      <div class="header-main">
+        <h1 id="titleMain"></h1>
+        <p id="titleSub"></p>
+      </div>
+      <div class="status-pill" id="statusPill" aria-live="polite">
+        <span class="status-dot is-idle" id="statusDot"></span>
+        <span id="statusText"></span>
+        <span class="status-sep">·</span>
+        <span id="statusMode"></span>
+        <span class="status-sep">·</span>
+        <span id="statusTopK"></span>
+        <span class="status-sep">·</span>
+        <span id="statusTools"></span>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <section class="card chat-card">
+        <div class="card-head">
+          <h2 id="chatTitle"></h2>
+        </div>
+
+        <div id="chatList" class="chat-list"></div>
+
+        <div class="composer">
+          <div class="composer-input">
+            <label for="messageInput" id="messageLabel"></label>
+            <textarea id="messageInput" rows="3"></textarea>
+            <p id="composerHint" class="composer-hint"></p>
+          </div>
+          <div class="composer-actions">
+            <button id="retryBtn" class="btn btn-secondary" type="button"></button>
+            <button id="stopBtn" class="btn btn-danger-outline" type="button"></button>
+            <button id="sendBtn" class="btn btn-primary" type="button"></button>
+          </div>
+        </div>
+      </section>
+
+      <aside class="side-grid">
+        <section class="card settings-card">
+          <div class="card-head">
+            <h2 id="settingsTitle"></h2>
+            <button id="ingestBtn" class="btn btn-outline" type="button"></button>
+          </div>
+
+          <div class="form-grid">
+            <div class="field">
+              <label for="sessionInput" id="sessionLabel"></label>
+              <input id="sessionInput" type="text" value="demo-001">
+            </div>
+            <div class="field">
+              <label for="sessionSelect" id="sessionHistoryLabel"></label>
+              <select id="sessionSelect"></select>
+            </div>
+            <div class="field">
+              <label for="topKInput" id="topKLabel"></label>
+              <input id="topKInput" type="number" min="1" max="10" step="1" value="3">
+            </div>
+            <div class="field">
+              <label id="toolLabel"></label>
+              <label class="switch-row" for="useToolsInput">
+                <input id="useToolsInput" type="checkbox" checked>
+                <span class="switch-slider"></span>
+                <span id="toolSwitchText"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="btn-line">
+            <button id="switchSessionBtn" class="btn btn-secondary" type="button"></button>
+            <button id="clearSessionBtn" class="btn btn-secondary" type="button"></button>
+          </div>
+
+          <div id="ingestBanner" class="ingest-banner ingest-idle"></div>
+        </section>
+
+        <section class="card debug-card">
+          <div class="card-head">
+            <h2 id="debugTitle"></h2>
+            <button id="debugToggleBtn" class="btn btn-ghost" type="button"></button>
+          </div>
+
+          <div id="debugBody" class="debug-body is-collapsed">
+            <div class="tab-list" role="tablist">
+              <button id="tabTrace" class="tab is-active" data-tab="trace" role="tab" type="button"></button>
+              <button id="tabRetrieval" class="tab" data-tab="retrieval" role="tab" type="button"></button>
+              <button id="tabTools" class="tab" data-tab="tools" role="tab" type="button"></button>
+              <button id="tabRaw" class="tab" data-tab="raw" role="tab" type="button"></button>
+            </div>
+
+            <section class="tab-panel is-active" data-panel="trace">
+              <article class="debug-block">
+                <h3 id="planTitle"></h3>
+                <ol id="planList"></ol>
+              </article>
+              <article class="debug-block">
+                <h3 id="stepsTitle"></h3>
+                <ul id="stepsList"></ul>
+              </article>
+              <article class="debug-block">
+                <h3 id="reactTitle"></h3>
+                <div id="reactList"></div>
+              </article>
+            </section>
+
+            <section class="tab-panel" data-panel="retrieval">
+              <div id="retrievalList"></div>
+            </section>
+
+            <section class="tab-panel" data-panel="tools">
+              <div id="toolsList"></div>
+            </section>
+
+            <section class="tab-panel" data-panel="raw">
+              <div class="raw-head">
+                <button id="copyDebugBtn" class="btn btn-secondary" type="button"></button>
+              </div>
+              <pre id="rawDebug"></pre>
+            </section>
+          </div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+  <script type="module">
+    async function loadApp() {
+      try {
+        await import("./app.js");
+      } catch (firstError) {
+        try {
+          await import("/frontend/app.js");
+        } catch (secondError) {
+          console.error("前端脚本加载失败", firstError, secondError);
+        }
+      }
+    }
+    loadApp();
+  </script>
+</body>
+</html>
