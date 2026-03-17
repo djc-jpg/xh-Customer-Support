@@ -21,6 +21,16 @@ const state = {
     text: TEXT.settings.ingestIdle,
   },
 
+  runtime: {
+    agents: [],
+    tools: [],
+    prompts: [],
+  },
+  memorySnapshot: {
+    summary: "",
+    facts: [],
+  },
+
   debug: createEmptyDebug(),
   activeStream: null,
   activeParser: null,
@@ -44,6 +54,7 @@ function boot() {
     onClearSession: () => clearCurrentSession(),
     onSettingsChange: ({ topK, useTools }) => updateSettings(topK, useTools),
     onQuickChip: (value) => sendChat(value),
+    onRefreshRuntime: () => refreshRuntimePanel(),
     onDebugToggle: () => undefined,
     onTabChange: () => undefined,
     onCopyDebug: (rawText) => copyDebug(rawText),
@@ -55,12 +66,16 @@ function boot() {
   ui.renderSessionOptions(Array.from(state.sessions.keys()), state.sessionId);
   ui.renderMessages(ensureSession(state.sessionId));
   ui.renderIngestBanner(state.ingest);
+  ui.renderRuntime(state.runtime);
+  ui.renderMemory(state.memorySnapshot);
   ui.renderDebug(getDebugViewData());
   ui.setStreaming(false);
   ui.setDebugOpen(false);
   ui.setActiveTab("trace");
   renderStatus();
   fetchHealthMode();
+  refreshRuntimePanel();
+  refreshMemory();
 }
 
 function ensureSession(sessionId) {
@@ -80,6 +95,7 @@ function switchSession(nextSessionId, showToast) {
   ui.setSessionInput(sid);
   ui.renderSessionOptions(Array.from(state.sessions.keys()), sid);
   ui.renderMessages(ensureSession(sid));
+  refreshMemory();
 
   if (showToast) {
     ui.showToast("info", TEXT.toast.sessionSwitched);
@@ -89,7 +105,9 @@ function switchSession(nextSessionId, showToast) {
 function clearCurrentSession() {
   state.sessions.set(state.sessionId, []);
   state.lastUserMessageBySession.delete(state.sessionId);
+  state.memorySnapshot = { summary: "", facts: [] };
   ui.renderMessages(ensureSession(state.sessionId));
+  ui.renderMemory(state.memorySnapshot);
   ui.showToast("info", TEXT.toast.sessionCleared);
 }
 
@@ -254,6 +272,7 @@ async function sendChat(overrideMessage = "") {
     await state.activeStream.done;
 
     if (state.status === "streaming") {
+      await refreshMemory();
       finishStream("idle");
     }
   } catch (error) {
@@ -363,10 +382,43 @@ async function fetchHealthMode() {
   }
 }
 
+async function refreshRuntimePanel() {
+  try {
+    const response = await fetch(`${BASE_URL}/agent/capabilities`);
+    if (!response.ok) return;
+    const data = sanitizeValue(await response.json());
+    state.runtime = {
+      agents: Array.isArray(data.agents) ? data.agents : [],
+      tools: Array.isArray(data.tools) ? data.tools : [],
+      prompts: Array.isArray(data.prompts) ? data.prompts : [],
+    };
+    ui.renderRuntime(state.runtime);
+  } catch {
+    // Runtime 面板失败不阻塞主流程
+  }
+}
+
+async function refreshMemory() {
+  try {
+    const response = await fetch(`${BASE_URL}/agent/memory/${encodeURIComponent(state.sessionId)}`);
+    if (!response.ok) return;
+    const data = sanitizeValue(await response.json());
+    state.memorySnapshot = data.memory || { summary: "", facts: [] };
+    ui.renderMemory(state.memorySnapshot);
+  } catch {
+    // Memory 面板失败不阻塞主流程
+  }
+}
+
 function mergeDebugObject(raw) {
   const data = sanitizeValue(raw);
   state.debug.raw = data;
   state.debug.trace = data.trace || state.debug.trace;
+
+  if (data.memory && typeof data.memory === "object") {
+    state.memorySnapshot = data.memory;
+    ui.renderMemory(state.memorySnapshot);
+  }
 
   if (state.debug.trace) {
     state.debug.traceSummary = buildTraceSummary(state.debug.trace);

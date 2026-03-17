@@ -4,15 +4,15 @@ import re
 from typing import Any
 
 from app.llm import LLMClient
+from app.prompt_manager import PromptManager
 from app.rag import RAGService
 from app.utils import (
     extract_order_id,
     extract_order_id_from_history,
-    load_prompt,
+    extract_order_id_from_memory,
     parse_json_robust,
 )
-from tools.order_api import QUERY_ORDER_TOOL, query_order
-from tools.ticket_api import CREATE_TICKET_TOOL, create_ticket
+from app.tool_registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -41,11 +41,17 @@ async def ask_json_with_retry(
 
 
 class IntentSentimentAgent:
-    def __init__(self, project_root, llm: LLMClient) -> None:
+    def __init__(self, prompt_manager: PromptManager, llm: LLMClient) -> None:
         self.llm = llm
-        self.prompt = load_prompt(project_root, "intent_sentiment.txt")
+        self.prompt_manager = prompt_manager
+        self.prompt = prompt_manager.render("intent_sentiment.txt")
 
-    async def run(self, message: str, history: list[dict[str, Any]]) -> dict[str, Any]:
+    async def run(
+        self,
+        message: str,
+        history: list[dict[str, Any]],
+        memory_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         fallback = self._rule_analyze(message, history)
         if not self.llm.available:
             return fallback
@@ -53,8 +59,10 @@ class IntentSentimentAgent:
         history_text = "\n".join(
             [f"{item['role']}: {item['content']}" for item in history[-6:]]
         ) or "无"
+        memory_text = self._format_memory(memory_snapshot)
         user_text = (
             f"对话历史:\n{history_text}\n\n"
+            f"会话记忆:\n{memory_text}\n\n"
             f"当前用户消息:\n{message}\n\n"
             "只输出 JSON。"
         )
@@ -109,6 +117,15 @@ class IntentSentimentAgent:
             "urgency": urgency,
             "need_tool": need_tool,
         }
+
+    def _format_memory(self, memory_snapshot: dict[str, Any] | None) -> str:
+        if not memory_snapshot:
+            return "无"
+        summary = str(memory_snapshot.get("summary", "")).strip()
+        facts = memory_snapshot.get("facts", [])
+        fact_text = "；".join(str(item) for item in facts[:4]) if isinstance(facts, list) else ""
+        merged = " | ".join(part for part in [summary, fact_text] if part)
+        return merged or "无"
 
     def _normalize_analysis(
         self,
@@ -271,10 +288,11 @@ class IntentSentimentAgent:
 
 
 class KnowledgeAgent:
-    def __init__(self, project_root, llm: LLMClient, rag: RAGService) -> None:
+    def __init__(self, prompt_manager: PromptManager, llm: LLMClient, rag: RAGService) -> None:
         self.llm = llm
         self.rag = rag
-        self.prompt = load_prompt(project_root, "knowledge_agent.txt")
+        self.prompt_manager = prompt_manager
+        self.prompt = prompt_manager.render("knowledge_agent.txt")
 
     async def run(self, intent: str, question: str, top_k: int = 3) -> dict[str, Any]:
         query = f"{intent}\n{question}"
@@ -425,9 +443,10 @@ class KnowledgeAgent:
 
 
 class PlannerAgent:
-    def __init__(self, project_root, llm: LLMClient) -> None:
+    def __init__(self, prompt_manager: PromptManager, llm: LLMClient) -> None:
         self.llm = llm
-        self.prompt = load_prompt(project_root, "planner_agent.txt")
+        self.prompt_manager = prompt_manager
+        self.prompt = prompt_manager.render("planner_agent.txt")
 
     async def run(
         self,
@@ -435,6 +454,7 @@ class PlannerAgent:
         analysis: dict[str, Any],
         knowledge_result: dict[str, Any],
         use_tools: bool = True,
+        memory_snapshot: dict[str, Any] | None = None,
     ) -> list[str]:
         effective_analysis = dict(analysis)
         if not use_tools:
@@ -448,6 +468,7 @@ class PlannerAgent:
             "question": question,
             "analysis": effective_analysis,
             "knowledge_hit_count": len(knowledge_result.get("contexts", [])),
+            "memory": memory_snapshot or {},
         }
         parsed = await ask_json_with_retry(
             self.llm,
@@ -477,10 +498,12 @@ class PlannerAgent:
 
 
 class ExecutorAgent:
-    def __init__(self, project_root, llm: LLMClient) -> None:
+    def __init__(self, prompt_manager: PromptManager, llm: LLMClient, tool_registry: ToolRegistry) -> None:
         self.llm = llm
-        self.prompt = load_prompt(project_root, "executor_agent.txt")
-        self.tools = [QUERY_ORDER_TOOL, CREATE_TICKET_TOOL]
+        self.prompt_manager = prompt_manager
+        self.prompt = prompt_manager.render("executor_agent.txt")
+        self.tool_registry = tool_registry
+        self.tools = tool_registry.list_definitions()
 
     async def run(
         self,
@@ -490,14 +513,16 @@ class ExecutorAgent:
         plan: list[str],
         history: list[dict[str, Any]],
         use_tools: bool = True,
+        memory_snapshot: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        tool_strategy = self._decide_tool_strategy(message, analysis, history, use_tools)
+        tool_strategy = self._decide_tool_strategy(message, analysis, history, memory_snapshot, use_tools)
         if tool_strategy != "none":
             return self._run_rule(
                 message,
                 analysis,
                 knowledge_result,
                 history,
+                memory_snapshot,
                 tool_strategy=tool_strategy,
             )
 
@@ -508,6 +533,7 @@ class ExecutorAgent:
                 knowledge_result,
                 plan,
                 history,
+                memory_snapshot,
                 use_tools=False,
             )
             if llm_result["final_answer"].strip():
@@ -518,6 +544,7 @@ class ExecutorAgent:
             analysis,
             knowledge_result,
             history,
+            memory_snapshot,
             tool_strategy="none",
         )
 
@@ -528,6 +555,7 @@ class ExecutorAgent:
         knowledge_result: dict[str, Any],
         plan: list[str],
         history: list[dict[str, Any]],
+        memory_snapshot: dict[str, Any] | None,
         use_tools: bool = True,
     ) -> dict[str, Any]:
         react_trace: list[dict[str, Any]] = []
@@ -540,6 +568,7 @@ class ExecutorAgent:
             "knowledge_contexts": knowledge_result.get("contexts", []),
             "answer_draft": knowledge_result.get("answer_draft", ""),
             "history": history[-6:],
+            "memory": memory_snapshot or {},
             "use_tools": use_tools,
         }
         messages: list[dict[str, Any]] = [
@@ -614,12 +643,17 @@ class ExecutorAgent:
         analysis: dict[str, Any],
         knowledge_result: dict[str, Any],
         history: list[dict[str, Any]],
+        memory_snapshot: dict[str, Any] | None,
         tool_strategy: str,
     ) -> dict[str, Any]:
         react_trace: list[dict[str, Any]] = []
         tool_outputs: list[dict[str, Any]] = []
 
-        order_id = extract_order_id(message) or extract_order_id_from_history(history)
+        order_id = (
+            extract_order_id(message)
+            or extract_order_id_from_history(history)
+            or extract_order_id_from_memory(memory_snapshot)
+        )
 
         if tool_strategy == "privacy_reject":
             react_trace.append(
@@ -695,6 +729,7 @@ class ExecutorAgent:
         message: str,
         analysis: dict[str, Any],
         history: list[dict[str, Any]],
+        memory_snapshot: dict[str, Any] | None,
         use_tools: bool,
     ) -> str:
         if not use_tools:
@@ -704,7 +739,11 @@ class ExecutorAgent:
         intent = str(analysis.get("intent", "general_query"))
         sentiment = str(analysis.get("sentiment", "neutral"))
         urgency = str(analysis.get("urgency", "normal"))
-        order_id = extract_order_id(message) or extract_order_id_from_history(history)
+        order_id = (
+            extract_order_id(message)
+            or extract_order_id_from_history(history)
+            or extract_order_id_from_memory(memory_snapshot)
+        )
 
         if self._is_privacy_request(text):
             return "privacy_reject"
@@ -768,16 +807,19 @@ class ExecutorAgent:
             order_id = str(args.get("order_id") or extract_order_id(message) or "").upper().strip()
             if not order_id:
                 return {"error": "缺少 order_id"}
-            return query_order(order_id)
+            return self.tool_registry.call("query_order", {"order_id": order_id})
 
         if tool_name == "create_ticket":
             priority = str(args.get("priority", "normal"))
             if priority not in {"low", "normal", "high"}:
                 priority = "high" if analysis.get("urgency") == "high" else "normal"
             issue = str(args.get("user_issue") or message).strip()
-            return create_ticket(issue, priority)
+            return self.tool_registry.call(
+                "create_ticket",
+                {"user_issue": issue, "priority": priority},
+            )
 
-        return {"error": f"unknown tool: {tool_name}"}
+        return {"error": str(ValueError(f"unknown tool: {tool_name}"))}
 
     def _compose_fallback_answer(
         self,

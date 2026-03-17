@@ -267,8 +267,41 @@ body {
 }
 
 .settings-card,
+.runtime-card,
 .debug-card {
   padding: 16px;
+}
+
+.runtime-block {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+
+.runtime-block h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.runtime-list {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.runtime-list li {
+  margin: 6px 0;
+}
+
+.runtime-note {
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #d0d5dd;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .form-grid {

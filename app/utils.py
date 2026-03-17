@@ -70,3 +70,18 @@ def extract_order_id_from_history(history: list[dict[str, Any]]) -> str | None:
         if order_id:
             return order_id
     return None
+
+
+def extract_order_id_from_memory(memory_snapshot: dict[str, Any] | None) -> str | None:
+    if not isinstance(memory_snapshot, dict):
+        return None
+
+    facts = memory_snapshot.get("facts", [])
+    if not isinstance(facts, list):
+        return None
+
+    for item in facts:
+        order_id = extract_order_id(str(item))
+        if order_id:
+            return order_id
+    return None

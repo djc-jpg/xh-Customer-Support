@@ -1,8 +1,8 @@
 export const TEXT = {
-  documentTitle: "AI 智能客服演示台",
+  documentTitle: "Agent 客服工作台",
   header: {
-    title: "AI 智能客服 Agent",
-    subtitle: "FastAPI + SSE 流式输出 + 多智能体调试视图",
+    title: "Agent 客服工作台",
+    subtitle: "可运行的 LLM / RAG / Tool Calling / Memory 演示台",
   },
   status: {
     idle: "空闲",
@@ -49,6 +49,16 @@ export const TEXT = {
       return `导入成功 · 模式：${mode} · 分片：${chunks}${tail}`;
     },
     ingestFail: "导入失败，请检查后端服务或 faq 文件。",
+  },
+  runtime: {
+    title: "Agent Runtime",
+    refresh: "刷新能力",
+    agentTitle: "Agent 分层",
+    toolTitle: "工具注册",
+    promptTitle: "Prompt 模板",
+    memoryTitle: "Session Memory",
+    empty: "暂无数据",
+    memoryPlaceholder: "当前会话还没有沉淀记忆。",
   },
   debug: {
     title: "调试面板",

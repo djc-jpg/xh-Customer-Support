@@ -1,38 +1,47 @@
 import asyncio
 import json
 import logging
-from datetime import datetime
-from pathlib import Path
-from time import perf_counter
 from typing import AsyncGenerator
-from uuid import uuid4
 
 from fastapi import Body, FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.agent_runtime import AgentRuntime
 from app.agents import ExecutorAgent, IntentSentimentAgent, KnowledgeAgent, PlannerAgent
 from app.config import load_settings
 from app.llm import LLMClient
+from app.logging_utils import configure_logging
 from app.memory import SessionMemory
+from app.prompt_manager import PromptManager
 from app.rag import RAGService
 from app.schemas import ChatRequest, IngestRequest
+from app.tool_registry import create_default_tool_registry
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
+configure_logging()
 logger = logging.getLogger("app.main")
 
 settings = load_settings()
 llm = LLMClient(settings)
 memory = SessionMemory(max_turns=settings.memory_turns)
 rag = RAGService(settings, llm)
+prompt_manager = PromptManager(settings.project_root / "prompts")
+tool_registry = create_default_tool_registry()
 
-intent_agent = IntentSentimentAgent(settings.project_root, llm)
-knowledge_agent = KnowledgeAgent(settings.project_root, llm, rag)
-planner_agent = PlannerAgent(settings.project_root, llm)
-executor_agent = ExecutorAgent(settings.project_root, llm)
+intent_agent = IntentSentimentAgent(prompt_manager, llm)
+knowledge_agent = KnowledgeAgent(prompt_manager, llm, rag)
+planner_agent = PlannerAgent(prompt_manager, llm)
+executor_agent = ExecutorAgent(prompt_manager, llm, tool_registry)
+runtime = AgentRuntime(
+    llm=llm,
+    memory=memory,
+    prompt_manager=prompt_manager,
+    tool_registry=tool_registry,
+    intent_agent=intent_agent,
+    knowledge_agent=knowledge_agent,
+    planner_agent=planner_agent,
+    executor_agent=executor_agent,
+)
 
 app = FastAPI(title="AI Customer Support Agent Demo", version="0.1.0")
 frontend_dir = settings.project_root / "frontend"
@@ -96,7 +105,27 @@ async def stream_text(text: str, event_type: str = "token", delay: float = 0.004
 
 @app.get("/health")
 async def health() -> dict:
-    return {"status": "ok", "llm_mode": llm.mode}
+    return {
+        "status": "ok",
+        "llm_mode": llm.mode,
+        "agent_runtime": "enabled",
+        "tools": len(tool_registry.list_definitions()),
+        "prompts": len(prompt_manager.list_templates()),
+    }
+
+
+@app.get("/agent/capabilities")
+async def agent_capabilities() -> dict:
+    return runtime.describe_capabilities()
+
+
+@app.get("/agent/memory/{session_id}")
+async def agent_memory(session_id: str) -> dict:
+    return {
+        "session_id": session_id,
+        "memory": memory.get_memory_snapshot(session_id),
+        "history": memory.get_history(session_id),
+    }
 
 
 @app.get("/")
@@ -242,26 +271,34 @@ async def ingest(req: IngestRequest | None = Body(default=None)) -> dict:
     return result
 
 
-@app.post("/chat")
-async def chat(req: ChatRequest) -> StreamingResponse:
+def build_chat_stream(req: ChatRequest) -> StreamingResponse:
     async def event_stream() -> AsyncGenerator[str, None]:
         session_id = req.session_id
         message = req.message
         top_k = req.top_k
         use_tools = req.use_tools
         show_debug = req.show_debug
-        trace_id = f"trace-{uuid4()}"
-        started_at = datetime.now().astimezone().isoformat(timespec="seconds")
-        started_perf = perf_counter()
-        logger.info("chat start session=%s message=%s", session_id, message)
+        trace_context = runtime.begin_trace(session_id=session_id, message=message, top_k=top_k)
+        trace_id = trace_context["trace_id"]
+        started_at = trace_context["started_at"]
+        started_perf = trace_context["started_perf"]
+        logger.info("chat start session=%s message=%s", session_id, message, extra={"trace_id": trace_id})
         try:
-            history = memory.get_history(session_id)
+            history = runtime.get_history(session_id)
+            memory_snapshot_before = runtime.get_memory_snapshot(session_id)
 
-            analysis = await intent_agent.run(message, history)
-            knowledge_result = await knowledge_agent.run(
-                analysis.get("intent", "general_query"),
-                message,
+            analysis = await runtime.analyze(
+                session_id=session_id,
+                message=message,
+                history=history,
+                memory_snapshot=memory_snapshot_before,
+                trace_id=trace_id,
+            )
+            knowledge_result = await runtime.retrieve(
+                intent=analysis.get("intent", "general_query"),
+                message=message,
                 top_k=top_k,
+                trace_id=trace_id,
             )
 
             if show_debug:
@@ -278,7 +315,14 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                         }
                     )
 
-            plan = await planner_agent.run(message, analysis, knowledge_result, use_tools=use_tools)
+            plan = await runtime.plan(
+                message=message,
+                analysis=analysis,
+                knowledge_result=knowledge_result,
+                use_tools=use_tools,
+                memory_snapshot=memory_snapshot_before,
+                trace_id=trace_id,
+            )
 
             plan_text = "[PLAN]\n" + "\n".join([f"{i + 1}. {step}" for i, step in enumerate(plan)]) + "\n\n"
             async for event in stream_text(plan_text, event_type="plan"):
@@ -289,13 +333,15 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                 async for event in stream_text(execute_line, event_type="execute", delay=0.001):
                     yield event
 
-            execution = await executor_agent.run(
+            execution = await runtime.execute(
                 message=message,
                 analysis=analysis,
                 knowledge_result=knowledge_result,
                 plan=plan,
                 history=history,
                 use_tools=use_tools,
+                memory_snapshot=memory_snapshot_before,
+                trace_id=trace_id,
             )
 
             if show_debug:
@@ -318,31 +364,29 @@ async def chat(req: ChatRequest) -> StreamingResponse:
             async for event in stream_text(final_answer, event_type="answer"):
                 yield event
 
-            memory.append_user(session_id, message)
-            memory.append_assistant(session_id, final_answer)
+            memory_snapshot = runtime.commit_memory(
+                session_id=session_id,
+                user_message=message,
+                final_answer=final_answer,
+                analysis=analysis,
+                tool_outputs=execution.get("tool_outputs", []),
+            )
 
             retrieval_docs = knowledge_result.get("retrieval_docs", [])
-            trace = {
-                "trace_id": trace_id,
-                "session_id": session_id,
-                "timestamp": started_at,
-                "llm": {
-                    "mode": llm.mode,
-                    "model": settings.openai_model,
-                },
-                "user_input": message,
-                "analysis": analysis,
-                "retrieval": {
-                    "query": f"{analysis.get('intent', 'general_query')}\n{message}",
-                    "top_k": top_k,
-                    "hits": build_retrieval_hits(retrieval_docs, top_k),
-                },
-                "plan": build_plan_steps(plan),
-                "tool_calls": execution.get("tool_outputs", []),
-                "final_answer": final_answer,
-                "latency_ms": int((perf_counter() - started_perf) * 1000),
-                "status": "success",
-            }
+            trace = runtime.build_trace(
+                trace_id=trace_id,
+                session_id=session_id,
+                started_at=started_at,
+                started_perf=started_perf,
+                user_input=message,
+                top_k=top_k,
+                analysis=analysis,
+                retrieval_hits=build_retrieval_hits(retrieval_docs, top_k),
+                plan_steps=build_plan_steps(plan),
+                tool_calls=execution.get("tool_outputs", []),
+                final_answer=final_answer,
+                status="success",
+            )
             meta = {
                 "trace_id": trace_id,
                 "analysis": analysis,
@@ -351,6 +395,7 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                 "top_k": top_k,
                 "use_tools": use_tools,
                 "trace": trace,
+                "memory": memory_snapshot,
             }
             if show_debug:
                 meta.update(
@@ -363,35 +408,28 @@ async def chat(req: ChatRequest) -> StreamingResponse:
                 )
             yield sse_data({"type": "meta", "content": meta})
             yield "data: [DONE]\n\n"
-            logger.info("chat end session=%s", session_id)
+            logger.info("chat end session=%s", session_id, extra={"trace_id": trace_id})
         except Exception as exc:  # noqa: BLE001
-            logger.exception("chat error session=%s", req.session_id)
+            logger.exception("chat error session=%s", req.session_id, extra={"trace_id": trace_id})
             error_type = classify_error(exc)
-            trace = {
-                "trace_id": trace_id,
-                "session_id": session_id,
-                "timestamp": started_at,
-                "llm": {
-                    "mode": llm.mode,
-                    "model": settings.openai_model,
-                },
-                "user_input": message,
-                "analysis": {},
-                "retrieval": {
-                    "query": "",
-                    "top_k": top_k,
-                    "hits": [],
-                },
-                "plan": [],
-                "tool_calls": [],
-                "final_answer": "",
-                "latency_ms": int((perf_counter() - started_perf) * 1000),
-                "status": "failed",
-                "error": {
+            trace = runtime.build_trace(
+                trace_id=trace_id,
+                session_id=session_id,
+                started_at=started_at,
+                started_perf=started_perf,
+                user_input=message,
+                top_k=top_k,
+                analysis={},
+                retrieval_hits=[],
+                plan_steps=[],
+                tool_calls=[],
+                final_answer="",
+                status="failed",
+                error={
                     "type": error_type,
                     "message": str(exc),
                 },
-            }
+            )
             error_text = f"[ERROR] {str(exc)}"
             yield sse_data({"type": "meta", "content": {"trace_id": trace_id, "trace": trace}})
             yield sse_data({"type": "error", "content": error_text})
@@ -406,3 +444,13 @@ async def chat(req: ChatRequest) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.post("/chat")
+async def chat(req: ChatRequest) -> StreamingResponse:
+    return build_chat_stream(req)
+
+
+@app.post("/agent/chat")
+async def agent_chat(req: ChatRequest) -> StreamingResponse:
+    return build_chat_stream(req)

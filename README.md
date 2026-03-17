@@ -1,99 +1,157 @@
-# xh-Customer-Support
+# Agent Customer Support Playground
 
-这是一个面向客服场景的 AI Agent 原型。我当前主要想先把一条常见客服链路跑通：用户提问后，系统先判断意图和情绪，再查 FAQ，必要时调用订单或工单工具，最后把结果以流式方式返回前端。
+一个面向客服场景的 Agent 工程化作品，用来展示我在 LLM 应用开发中的完整落地能力：对话入口、Prompt 管理、Tool Calling、RAG、简单 Memory、可扩展 Agent Runtime、SSE 流式交互，以及基础可观测性。
 
-RAG、Tool Calling、Plan-Execute、ReAct、Multi-Agent、SSE，以及后面的 Trace / Eval，都是围绕这条链路逐步加上的。当前版本没有追求把能力铺得很大，重点还是把核心流程跑通，把调试和评测材料留全，方便看清它现在能做到什么、边界又在哪里。
+这个项目不是“只会聊天”的 Demo，而是一个可以直接运行、可调试、可扩展的 Agent 原型。当前版本聚焦在客服主链路：用户提问后，系统会进行意图与情绪分析，检索 FAQ，按需调用订单/工单工具，并把推理轨迹、工具结果、记忆状态一起返回给前端。
 
-## 项目概览
+## 项目简介
 
-- 真实模型已接通：当前支持 DashScope 兼容接口，已验证 `qwen3-max`
-- 主链路可运行：支持 FAQ 导入、订单查询、工单创建、流式回复
-- 有证据链：仓库内包含 `trace` 文档、评测数据、自动评测脚本和最新评测结果
-- 有工程边界：当前版本明确区分“已跑通的处理链路”和“尚未做成生产级的平台能力”
+- 场景定位：电商/客服场景下的智能问答与工单协同
+- 项目目标：用最小可运行版本展示一个 Agent 应用从后端编排到前端交互的完整闭环
+- 当前形态：FastAPI 后端 + 原生前端 + SSE 流式输出 + 本地知识库检索
+- 适合展示的能力点：
+  - LLM 接入与 Prompt 工程
+  - Agent 编排与 Tool Calling
+  - Memory 与多轮对话上下文处理
+  - RAG 检索增强
+  - 工程化调试、日志、Trace、Eval
 
-## 证据入口
+## 核心功能
 
-- V1 范围定义：
-  - [`docs/v1-scope.md`](docs/v1-scope.md)
-- Trace 结构与错误分类：
-  - [`docs/trace-schema.md`](docs/trace-schema.md)
-- 评测说明：
-  - [`eval/README.md`](eval/README.md)
-- 最新评测结果：
-  - [`eval/results/full-run-latest.json`](eval/results/full-run-latest.json)
-- 关键接口：
-  - `GET /health`
-  - `POST /ingest`
-  - `POST /chat`
+### 1. 对话入口
 
-当前仓库内的最新评测报告显示：**40 条结构化规则评测（rule-based evaluation，规则评测）样例全部通过**。  
-这组结果主要反映的是：当前版本的主链路可运行，关键字段能命中，工具匹配和检索命中符合预期，显式安全规则通过。  
-它**不等价于**开放式回答质量已经最优，也**不等价于**生产环境中的泛化能力已经验证完成。
+- `POST /agent/chat`：新的 Agent 对话入口，支持流式输出
+- `POST /chat`：保留兼容入口
+- 前端支持：
+  - 多会话切换
+  - 流式回复
+  - 停止 / 重试
+  - 调试信息展示
 
-## 系统架构
+### 2. Prompt 模板管理
 
-当前主链路采用串行编排方式，可以直接按下面这条链理解：
+- 新增 `PromptManager`
+- 自动扫描 `prompts/` 目录中的模板
+- 当前已接管以下 Prompt：
+  - `intent_sentiment.txt`
+  - `knowledge_agent.txt`
+  - `planner_agent.txt`
+  - `executor_agent.txt`
+- 支持通过 `/agent/capabilities` 查看当前 Prompt 列表
 
-`用户 -> Frontend UI -> /chat -> IntentSentimentAgent -> KnowledgeAgent / RAG -> PlannerAgent -> ExecutorAgent -> Tools -> SSE 返回前端`
+### 3. Tool Calling
 
-简单理解，就是前端把用户问题发到 `/chat`，后端先做分析和检索，再决定后续步骤，必要时调用工具，最后把回答和调试信息一起流式返回前端。
+- 新增 `ToolRegistry`，统一注册工具定义与执行函数
+- 当前内置工具：
+  - `query_order`：查询订单状态
+  - `create_ticket`：创建客服工单
+- 工具既支持规则式触发，也支持 LLM function calling
 
-## 当前版本已验证的内容
+### 4. 简单 Memory
 
-以下内容是当前仓库**已经实际跑通或已完成一轮验证**的部分：
+- 保留原有 session history
+- 新增轻量级 memory snapshot：
+  - 最近会话摘要 `summary`
+  - 关键事实 `facts`
+  - 例如最近订单号、最近工单号、用户诉求、情绪、紧急程度
+- Memory 已接入执行链路，可在多轮对话中辅助补全订单号
+- 可通过 `GET /agent/memory/{session_id}` 查看当前会话记忆
 
-- 当前可接 DashScope 兼容接口，`/health` 里能看到 `llm_mode = dashscope`
-- 根路径会跳转到 `/frontend/`，前端可以直接发起聊天请求
-- `/ingest`、`/chat`、SSE 流式返回和调试面板这条链路当前都能跑通
-- `/chat` 已接入结构化 trace，能记录 `analysis / retrieval / plan / tool_calls / final_answer`
-- 已做过一轮基于 Playwright 的页面回归验证，覆盖首页、导入知识库、订单查询、隐私边界拒绝等核心路径
-- 当前内置 40 条结构化规则评测样例，并保留了最新一轮评测报告
+### 5. RAG 检索增强
 
-这里的“已验证”指当前仓库版本已经完成本地运行和结果留存，不表示系统已经具备生产级 SLA、真实业务集成或开放域鲁棒性。
+- 支持 FAQ Markdown 导入
+- 默认检索链路：
+  - 有 embedding 能力时：Chroma + 向量检索
+  - 无 embedding 能力时：TF-IDF fallback
+- `POST /ingest` 可重新导入知识库
 
-## 当前能力与边界
+### 6. Trace、日志与错误处理
 
-### 当前范围
+- 每轮对话生成 `trace_id`
+- 将分析、检索、计划、执行、工具调用整合为结构化 trace
+- 日志中按阶段记录：
+  - `analysis`
+  - `knowledge`
+  - `plan`
+  - `execute`
+- 前端可查看：
+  - Plan
+  - ReAct 轨迹
+  - 检索命中
+  - 工具调用结果
+  - 原始 JSON
 
-当前版本重点验证的是：
+## 技术架构
 
-- 客服问答场景下的一条完整处理链路
-- 检索、工具、规划、执行、流式输出之间如何协同
-- 如何用 `trace` 和 `eval` 给当前版本增加可验证材料
+### 后端
 
-当前版本暂不强调的是：
+- `FastAPI`：接口服务与 SSE 流式输出
+- `OpenAI SDK`：兼容 OpenAI / DashScope 接口
+- `ChromaDB`：向量知识库
+- `scikit-learn`：TF-IDF fallback 检索
 
-- 真实订单系统 / 工单系统集成
-- 长期记忆、复杂权限、多租户
-- 开放域问答能力
-- 生产级稳定性、监控、治理和成本优化
+### 前端
 
-### 能力与当前实现方式
+- 原生 `HTML + CSS + JavaScript`
+- `ReadableStream` 实现流式消息消费
+- 多面板调试视图，适合展示 Agent 内部执行过程
 
-| 能力 | 当前实现方式 | 当前边界 |
-| --- | --- | --- |
-| `RAG` | 基于 FAQ Markdown 导入、切分、Embedding + Chroma 检索；在缺少相关配置时支持 fallback | 当前主要是单知识源 FAQ 检索，还没有做多知识源路由、hybrid retrieval 或 rerank 落地 |
-| `Tool Calling` | 当前内置 `query_order` 和 `create_ticket` 两个工具，工具结果会进入最终回答；对缺参数、越权请求和人工升级做了规则守卫 | 工具层仍是 mock，不代表已接真实业务系统 |
-| `Multi-Agent` | 后端当前拆成分析、知识、规划、执行四类角色，按串行主链路编排 | 不是并行 agent runtime，也不是通用的多智能体协作平台 |
-| `Plan-Execute` | 有独立 planner 和 executor，plan 会进入调试面板，也会影响后续执行 | 当前主要是轻量计划生成与执行展示链路，不是长流程任务编排引擎 |
-| `ReAct` | Executor 会输出 Thought / Action / Observation 轨迹，用于展示工具决策和执行过程 | 当前主要是单轮请求内的工具决策轨迹展示，不是开放式长期循环 Agent |
-| `SSE` | 前端通过 SSE 接收流式回答和调试信息 | 当前是轻量流式交互，不是完整消息总线或断点恢复机制 |
-| `Trace` | `/chat` 返回结构化 trace，可用于 bad case 排查和自动评测 | 当前 trace 更偏调试与评测支撑，不是完整 observability 平台 |
-| `Evaluation` | 基于 40 条结构化样例执行规则评测，并输出 bad case 汇总 | 规则评测主要验证定义好的检查项，不等价于开放式回答质量已经“完美” |
+### Agent Runtime 分层
 
-## 目录结构
+当前运行时链路如下：
 
-```text
-app/                后端主逻辑、Agent、RAG、配置、内存
-frontend/           原生前端与 SSE 调试界面
-tools/              订单查询与工单创建工具
-prompts/            各 Agent 提示词
-data/               FAQ 知识库
-docs/               V1 范围、Trace、RAG 路线图
-eval/               评测数据集、评测脚本、评测结果
-```
+`用户输入 -> AgentRuntime -> IntentSentimentAgent -> KnowledgeAgent(RAG) -> PlannerAgent -> ExecutorAgent -> ToolRegistry -> SSE 输出前端`
 
-## 快速开始
+对应职责：
+
+- `IntentSentimentAgent`
+  - 识别意图、情绪、紧急程度
+  - 判断是否需要工具调用
+- `KnowledgeAgent`
+  - 检索 FAQ
+  - 输出 answer draft
+- `PlannerAgent`
+  - 生成 3~6 步可解释计划
+- `ExecutorAgent`
+  - 决定工具策略
+  - 调用工具
+  - 产出最终回复
+- `AgentRuntime`
+  - 管理 trace、memory、日志、能力描述接口
+
+## Agent 能力说明
+
+### 已实现
+
+#### 1. 多 Agent 串行编排
+
+不是单 Prompt 直接回答，而是把分析、检索、计划、执行拆成独立角色，便于扩展和调试。
+
+#### 2. Tool Calling 双通路
+
+- 规则式调用：保障关键客服场景稳定可控
+- LLM function calling：保留更自然的 Agent 执行方式
+
+#### 3. 简单可用的会话记忆
+
+当前 Memory 为内存版，不做持久化，但已经具备：
+
+- 短期历史对话
+- 关键事实沉淀
+- 会话摘要
+- 在执行阶段参与决策
+
+#### 4. 可观测的 Agent 过程
+
+前端可以看到这轮回答不是“黑盒生成”，而是包含：
+
+- 为什么要这样规划
+- 是否命中知识库
+- 是否调用工具
+- 工具返回了什么
+- 最终怎么形成答复
+
+## 使用方法
 
 ### 1. 安装依赖
 
@@ -103,11 +161,11 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 2. 配置 `.env`
+### 2. 配置环境变量
 
-参考 [`.env.example`](.env.example)。
+参考 [`.env.example`](./.env.example)。
 
-如果使用 DashScope / Qwen：
+如果使用 DashScope / Qwen，可配置：
 
 ```env
 DASHSCOPE_API_KEY=your_key
@@ -116,86 +174,133 @@ DASHSCOPE_MODEL=qwen3-max
 DASHSCOPE_EMBEDDING_MODEL=text-embedding-v4
 ```
 
+如果使用 OpenAI 兼容接口，也支持：
+
+```env
+OPENAI_API_KEY=your_key
+OPENAI_BASE_URL=https://your-base-url/v1
+OPENAI_MODEL=gpt-4o-mini
+EMBEDDING_MODEL=text-embedding-3-small
+```
+
 ### 3. 启动服务
 
 ```powershell
 .\.venv\Scripts\python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-访问：
+启动后可访问：
 
 - [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
 - [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)
+- [http://127.0.0.1:8000/agent/capabilities](http://127.0.0.1:8000/agent/capabilities)
 
 ### 4. 导入知识库
-
-前端可以直接点击“导入知识库”，也可以手动调用：
 
 ```bash
 curl -X POST "http://127.0.0.1:8000/ingest" \
   -H "Content-Type: application/json" \
-  -d '{"file_path":"data/faq.md"}'
+  -d "{\"file_path\":\"data/faq.md\"}"
 ```
 
-### 5. 测试聊天接口
+### 5. 调用 Agent 对话接口
 
 ```bash
-curl -N -X POST "http://127.0.0.1:8000/chat" \
+curl -N -X POST "http://127.0.0.1:8000/agent/chat" \
   -H "Content-Type: application/json" \
-  -d '{"session_id":"demo-001","message":"我很着急，我的订单 O1001 到哪了？","show_debug":true}'
+  -d "{\"session_id\":\"demo-001\",\"message\":\"我很着急，帮我查一下订单 O1001 到哪了\",\"show_debug\":true}"
 ```
 
-## Evaluation
+### 6. 查看会话记忆
 
-当前仓库的评测材料包括：
+```bash
+curl "http://127.0.0.1:8000/agent/memory/demo-001"
+```
 
-- [`eval/customer_support_v1_eval_dataset.json`](eval/customer_support_v1_eval_dataset.json)
-- [`eval/run_eval.py`](eval/run_eval.py)
-- [`eval/README.md`](eval/README.md)
-- [`eval/results/full-run-latest.json`](eval/results/full-run-latest.json)
+## 项目亮点
 
-### 当前评测覆盖什么
+### 1. 不是概念图，而是可运行闭环
 
-当前这套评测主要覆盖：
+从前端对话入口，到后端编排、知识库检索、工具调用、日志、trace，当前仓库都能实际跑通。
 
-- 订单、退款、登录、发票、地址修改、人工升级、越界请求和隐私安全场景
-- `intent / sentiment / urgency`
-- `need_tool`
-- `tool_match`
-- `retrieval_topic_hit`
-- `literal_safety`
-- `request_success`
+### 2. 工程化表达比“模型能力堆砌”更完整
 
-### 如何解读当前结果
+这个项目重点不是塞更多名词，而是把真正会被问到的工程问题补全：
 
-最新报告时间：`2026-03-09`
+- Prompt 怎么管理
+- 工具如何注册与扩展
+- 多轮记忆怎么接入决策
+- 如何调试一次 Agent 回答
+- 错误和 trace 怎么看
 
-- `cases_total = 40`
-- `auto_pass_rate = 1.0`
-- `bad_case_count = 0`
-- `manual_review_rate = 1.0`
+### 3. 保留了可验证材料
 
-这里最重要的边界说明是：
+仓库内已有：
 
-- `40/40` 指的是**当前这套结构化规则评测（rule-based evaluation，规则评测）**全部通过
-- 这主要说明：当前版本在已定义 case 上的主链路、字段命中、工具匹配、检索命中和显式安全规则检查表现稳定
-- 这**不等价于**开放式生成质量已经最优，也**不等价于**面对未见输入的泛化能力已经充分验证
-- 报告中的 `manual_review_rate = 1.0` 也意味着：自然度、完整性、语气等更偏语义的维度，仍建议人工复核
+- `docs/`：范围说明与 trace 说明
+- `eval/`：评测数据、脚本、结果
+- `frontend/`：可直接演示的前端工作台
 
-## 后续计划
+当前仓库保留了 40 条规则型评测样例与最近一次评测结果，可作为“功能稳定性验证材料”。
 
-后续更适合继续做的是：
+## 项目结构
 
-- 把评测结果整理成更适合 GitHub 展示的摘要页或对比表
-- 落地第一版 RAG 升级，而不只停留在路线图
-- 在保持当前边界清晰的前提下，逐步把 mock tools 替换成真实业务抽象
+```text
+app/
+  main.py               FastAPI 入口与 SSE 输出
+  agent_runtime.py      Agent Runtime 编排
+  agents.py             四类 Agent 角色实现
+  prompt_manager.py     Prompt 模板管理
+  tool_registry.py      工具注册与调度
+  memory.py             会话历史 + facts + summary
+  rag.py                Chroma / TF-IDF 检索
+  llm.py                LLM 统一封装
 
-RAG 路线图见：
+frontend/
+  index.html            Agent 工作台界面
+  app.js                前端状态与请求逻辑
+  ui.js                 UI 渲染层
+  sse.js                流式消息消费
 
-- [`docs/rag-roadmap.md`](docs/rag-roadmap.md)
+tools/
+  order_api.py          订单查询工具（mock）
+  ticket_api.py         工单创建工具（mock）
 
-## 已知边界
+prompts/
+  *.txt                 各 Agent Prompt 模板
+```
 
-- 前端顶部“模式”字段在导入知识库后会显示 `chroma_openai`，这更接近检索侧模式，不完全等同于当前 LLM 模式
-- 工具层目前仍是 mock，适合展示 Agent 工作流，不代表已经接真实业务系统
-- 当前版本重点是“可运行原型 + 可验证材料”，不是完整生产平台
+## 后续优化方向
+
+### 规划中
+
+- 持久化 Memory
+  - 当前仅为进程内 memory，重启后丢失
+  - 后续可接 Redis / SQLite / 向量记忆
+
+- 更通用的 Agent 插件机制
+  - 当前已支持工具注册
+  - 但还没有做到“Agent 动态装配 / 配置化工作流”
+
+- 真实业务系统接入
+  - 当前订单和工单工具是 mock
+  - 后续可替换为真实 OMS / 工单系统 API
+
+- 更完整的观测体系
+  - 当前已有 trace 与阶段日志
+  - 后续可接 Langfuse / OpenTelemetry / APM
+
+- 更强的 RAG 能力
+  - 当前以 FAQ 检索为主
+  - 后续可加入 rerank、hybrid retrieval、多知识源路由
+
+- 更严格的自动化评测
+  - 当前以 rule-based eval 为主
+  - 后续可补充 LLM-as-a-judge 与回归基准集
+
+## 当前边界说明
+
+- 订单查询、工单创建目前是 mock tool，适合演示 Agent 工作流，不代表已接真实生产系统
+- Memory 已可运行，但属于轻量版，不包含跨进程持久化
+- 多 Agent 是串行编排，不是通用多智能体协作平台
+- 当前重点是“最小可运行 + 可展示 + 可解释”，不是生产级客服平台

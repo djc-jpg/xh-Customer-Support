@@ -1,5 +1,5 @@
 /**
- * 这里封装 /chat 的流式请求：
+ * 这里封装 /agent/chat 的流式请求：
  * - 必须使用 POST（EventSource 不支持）
  * - 用 ReadableStream 增量读取
  * - 对外只抛出统一的 SSE 事件对象，便于 parser 复用
@@ -8,7 +8,7 @@ export function startChatStream({ baseUrl, payload, onEvent }) {
   const controller = new AbortController();
 
   const done = (async () => {
-    const response = await fetch(`${baseUrl}/chat`, {
+    const response = await fetch(`${baseUrl}/agent/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -36,6 +36,17 @@ export function createUI(text) {
     clearSessionBtn: document.getElementById("clearSessionBtn"),
     ingestBanner: document.getElementById("ingestBanner"),
 
+    runtimeTitle: document.getElementById("runtimeTitle"),
+    refreshRuntimeBtn: document.getElementById("refreshRuntimeBtn"),
+    runtimeAgentTitle: document.getElementById("runtimeAgentTitle"),
+    runtimeToolTitle: document.getElementById("runtimeToolTitle"),
+    runtimePromptTitle: document.getElementById("runtimePromptTitle"),
+    runtimeMemoryTitle: document.getElementById("runtimeMemoryTitle"),
+    runtimeAgentList: document.getElementById("runtimeAgentList"),
+    runtimeToolList: document.getElementById("runtimeToolList"),
+    runtimePromptList: document.getElementById("runtimePromptList"),
+    runtimeMemoryBox: document.getElementById("runtimeMemoryBox"),
+
     debugTitle: document.getElementById("debugTitle"),
     debugToggleBtn: document.getElementById("debugToggleBtn"),
     debugBody: document.getElementById("debugBody"),
@@ -87,6 +98,13 @@ export function createUI(text) {
     refs.switchSessionBtn.textContent = text.settings.switchSession;
     refs.clearSessionBtn.textContent = text.settings.clearSession;
 
+    refs.runtimeTitle.textContent = text.runtime.title;
+    refs.refreshRuntimeBtn.textContent = text.runtime.refresh;
+    refs.runtimeAgentTitle.textContent = text.runtime.agentTitle;
+    refs.runtimeToolTitle.textContent = text.runtime.toolTitle;
+    refs.runtimePromptTitle.textContent = text.runtime.promptTitle;
+    refs.runtimeMemoryTitle.textContent = text.runtime.memoryTitle;
+
     refs.debugTitle.textContent = text.debug.title;
     refs.tabTrace.textContent = text.debug.tabTrace;
     refs.tabRetrieval.textContent = text.debug.tabRetrieval;
@@ -114,6 +132,10 @@ export function createUI(text) {
 
     refs.clearSessionBtn.addEventListener("click", () => {
       handlers.onClearSession?.();
+    });
+
+    refs.refreshRuntimeBtn.addEventListener("click", () => {
+      handlers.onRefreshRuntime?.();
     });
 
     refs.sessionSelect.addEventListener("change", () => {
@@ -335,6 +357,76 @@ export function createUI(text) {
     refs.ingestBanner.textContent = banner.text;
   }
 
+  function renderRuntime(data) {
+    renderRuntimeList(
+      refs.runtimeAgentList,
+      Array.isArray(data?.agents)
+        ? data.agents.map((item) => `${item.name} · ${item.role}`)
+        : [],
+    );
+    renderRuntimeList(
+      refs.runtimeToolList,
+      Array.isArray(data?.tools)
+        ? data.tools.map((item) => `${item.name} · ${item.description || "无描述"}`)
+        : [],
+    );
+    renderRuntimeList(
+      refs.runtimePromptList,
+      Array.isArray(data?.prompts)
+        ? data.prompts.map((item) => `${item.name}`)
+        : [],
+    );
+  }
+
+  function renderMemory(memory) {
+    refs.runtimeMemoryBox.innerHTML = "";
+    const summary = String(memory?.summary || "").trim();
+    const facts = Array.isArray(memory?.facts) ? memory.facts : [];
+    if (!summary && !facts.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-hint";
+      empty.textContent = text.runtime.memoryPlaceholder;
+      refs.runtimeMemoryBox.appendChild(empty);
+      return;
+    }
+
+    if (summary) {
+      const summaryBox = document.createElement("div");
+      summaryBox.className = "runtime-note";
+      summaryBox.textContent = summary;
+      refs.runtimeMemoryBox.appendChild(summaryBox);
+    }
+
+    const factList = document.createElement("ul");
+    factList.className = "runtime-list";
+    facts.forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = String(item);
+      factList.appendChild(li);
+    });
+    refs.runtimeMemoryBox.appendChild(factList);
+  }
+
+  function renderRuntimeList(container, items) {
+    container.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-hint";
+      empty.textContent = text.runtime.empty;
+      container.appendChild(empty);
+      return;
+    }
+
+    const list = document.createElement("ul");
+    list.className = "runtime-list";
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      li.textContent = String(item);
+      list.appendChild(li);
+    });
+    container.appendChild(list);
+  }
+
   /**
    * 调试面板按四个块渲染，确保长文本也能稳定排版。
    */
@@ -452,6 +544,8 @@ export function createUI(text) {
     setStreaming,
     setIngestBusy,
     renderIngestBanner,
+    renderRuntime,
+    renderMemory,
     renderDebug,
     showToast,
   };
