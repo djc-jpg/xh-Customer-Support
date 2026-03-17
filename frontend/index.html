@@ -7,28 +7,77 @@
   <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+  <div class="stage-glow stage-glow-a"></div>
+  <div class="stage-glow stage-glow-b"></div>
   <div class="page">
-    <header class="card header-card">
-      <div class="header-main">
-        <h1 id="titleMain"></h1>
-        <p id="titleSub"></p>
+    <header class="hero">
+      <div class="card header-card">
+        <div class="hero-copy">
+          <p class="hero-kicker">AGENT PRODUCT DEMO</p>
+          <div class="header-main">
+            <h1 id="titleMain"></h1>
+            <p id="titleSub"></p>
+          </div>
+          <p class="hero-note">把客服问答、RAG 检索、Tool Calling、Memory 和记忆可视化放进一个可运行作品里。</p>
+          <div class="hero-chip-row">
+            <span class="hero-chip">LLM / DashScope</span>
+            <span class="hero-chip">RAG + SSE Streaming</span>
+            <span class="hero-chip">Prompt / Tool / Memory</span>
+          </div>
+        </div>
+        <div class="hero-side">
+          <div class="status-pill" id="statusPill" aria-live="polite">
+            <span class="status-dot is-idle" id="statusDot"></span>
+            <span id="statusText"></span>
+            <span class="status-sep">·</span>
+            <span id="statusMode"></span>
+            <span class="status-sep">·</span>
+            <span id="statusTopK"></span>
+            <span class="status-sep">·</span>
+            <span id="statusTools"></span>
+          </div>
+          <div class="hero-note-card">
+            <p class="hero-note-label">打开首页可以直接验证</p>
+            <ul class="hero-points">
+              <li>Agent 是否真的拆成分析、检索、计划、执行四层</li>
+              <li>工具调用和会话记忆是否接入真实链路</li>
+              <li>前端是否能完整展示 trace、tool、retrieval 与 raw meta</li>
+            </ul>
+          </div>
+        </div>
       </div>
-      <div class="status-pill" id="statusPill" aria-live="polite">
-        <span class="status-dot is-idle" id="statusDot"></span>
-        <span id="statusText"></span>
-        <span class="status-sep">·</span>
-        <span id="statusMode"></span>
-        <span class="status-sep">·</span>
-        <span id="statusTopK"></span>
-        <span class="status-sep">·</span>
-        <span id="statusTools"></span>
+
+      <div class="showcase-grid">
+        <article class="showcase-card accent-amber">
+          <p class="showcase-label">01 / 对话入口</p>
+          <h2>从作品首屏直接进入 Agent 对话</h2>
+          <p>支持多会话、流式输出、停止重试，适合现场演示完整交互路径。</p>
+        </article>
+        <article class="showcase-card accent-cyan">
+          <p class="showcase-label">02 / 能力拆解</p>
+          <h2>Prompt、工具、记忆全部可见</h2>
+          <p>不是黑盒聊天页，而是能把 Runtime 分层与能力边界直接展示出来。</p>
+        </article>
+        <article class="showcase-card accent-rose">
+          <p class="showcase-label">03 / 决策透明</p>
+          <h2>Plan、ReAct、检索命中可追踪</h2>
+          <p>招聘方能快速看到系统如何分析问题、命中知识、决定调用工具并返回结果。</p>
+        </article>
+        <article class="showcase-card accent-slate">
+          <p class="showcase-label">04 / 工程表达</p>
+          <h2>保留调试与评估视角</h2>
+          <p>适合把“我会做 Agent”讲成“我会做可运行、可解释、可维护的 Agent 系统”。</p>
+        </article>
       </div>
     </header>
 
     <main class="main-grid">
       <section class="card chat-card">
-        <div class="card-head">
-          <h2 id="chatTitle"></h2>
+        <div class="card-head card-head-stacked">
+          <div class="card-head-copy">
+            <p class="section-kicker">Live Console</p>
+            <h2 id="chatTitle"></h2>
+          </div>
         </div>
 
         <div id="chatList" class="chat-list"></div>
@@ -49,8 +98,11 @@
 
       <aside class="side-grid">
         <section class="card settings-card">
-          <div class="card-head">
-            <h2 id="settingsTitle"></h2>
+          <div class="card-head card-head-stacked">
+            <div class="card-head-copy">
+              <p class="section-kicker">Session Controls</p>
+              <h2 id="settingsTitle"></h2>
+            </div>
             <button id="ingestBtn" class="btn btn-outline" type="button"></button>
           </div>
 
@@ -86,8 +138,11 @@
         </section>
 
         <section class="card runtime-card">
-          <div class="card-head">
-            <h2 id="runtimeTitle"></h2>
+          <div class="card-head card-head-stacked">
+            <div class="card-head-copy">
+              <p class="section-kicker">Capability Snapshot</p>
+              <h2 id="runtimeTitle"></h2>
+            </div>
             <button id="refreshRuntimeBtn" class="btn btn-secondary" type="button"></button>
           </div>
 
@@ -113,8 +168,11 @@
         </section>
 
         <section class="card debug-card">
-          <div class="card-head">
-            <h2 id="debugTitle"></h2>
+          <div class="card-head card-head-stacked">
+            <div class="card-head-copy">
+              <p class="section-kicker">Observability</p>
+              <h2 id="debugTitle"></h2>
+            </div>
             <button id="debugToggleBtn" class="btn btn-ghost" type="button"></button>
           </div>
 

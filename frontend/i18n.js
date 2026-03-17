@@ -1,8 +1,8 @@
 export const TEXT = {
-  documentTitle: "Agent 客服工作台",
+  documentTitle: "Agent 作品演示台",
   header: {
-    title: "Agent 客服工作台",
-    subtitle: "可运行的 LLM / RAG / Tool Calling / Memory 演示台",
+    title: "Agent 客服作品演示台",
+    subtitle: "一个可直接运行的客服 Agent 原型，展示对话入口、RAG、工具调用、会话记忆与可观测性。",
   },
   status: {
     idle: "空闲",
@@ -17,7 +17,7 @@ export const TEXT = {
     unknownMode: "未知",
   },
   chat: {
-    title: "对话",
+    title: "现场对话演示",
     messageLabel: "用户消息",
     messagePlaceholder: "请输入你的问题，例如：我很着急，订单 O1001 到哪了？",
     hint: "Enter 发送 · Shift+Enter 换行",
@@ -33,7 +33,7 @@ export const TEXT = {
     ],
   },
   settings: {
-    title: "设置",
+    title: "演示控制台",
     ingest: "导入知识库",
     sessionId: "会话 ID",
     sessionHistory: "历史会话",
@@ -51,7 +51,7 @@ export const TEXT = {
     ingestFail: "导入失败，请检查后端服务或 faq 文件。",
   },
   runtime: {
-    title: "Agent Runtime",
+    title: "Agent Runtime 能力图谱",
     refresh: "刷新能力",
     agentTitle: "Agent 分层",
     toolTitle: "工具注册",
@@ -61,7 +61,7 @@ export const TEXT = {
     memoryPlaceholder: "当前会话还没有沉淀记忆。",
   },
   debug: {
-    title: "调试面板",
+    title: "执行观测面板",
     expand: "展开",
     collapse: "收起",
     tabTrace: "执行轨迹",
